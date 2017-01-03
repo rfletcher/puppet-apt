@@ -1,3 +1,4 @@
+require 'facter'
 require 'open-uri'
 require 'net/ftp'
 require 'tempfile'
@@ -15,7 +16,8 @@ Puppet::Type.type(:apt_key).provide(:apt_key) do
   confine    :osfamily => :debian
   defaultfor :osfamily => :debian
   commands   :apt_key  => 'apt-key'
-  commands   :gpg      => '/usr/bin/gpg'
+  commands   :awk      => 'awk'
+  commands   :gpg      => 'gpg'
 
   def self.instances
     cli_args = ['adv','--list-keys', '--with-colons', '--fingerprint', '--fixed-list-mode']
@@ -133,14 +135,17 @@ Puppet::Type.type(:apt_key).provide(:apt_key) do
   end
 
   def tempfile(content)
+    puppet_home = Facter['puppet_vardir'].value
+
     file = Tempfile.new('apt_key')
     file.write content
     file.close
+
     #confirm that the fingerprint from the file, matches the long key that is in the manifest
     if name.size == 40
       if File.executable? command(:gpg)
-        extracted_key = execute(["#{command(:gpg)} --with-fingerprint --with-colons #{file.path} | awk -F: '/^fpr:/ { print $10 }'"], :failonfail => false)
-        extracted_key = extracted_key.chomp
+        command = "#{command(:gpg)} --homedir=#{puppet_home} --with-fingerprint --with-colons #{file.path} | #{command(:awk)} -F: '/^fpr:/ { print $10 }'"
+        extracted_key = execute(command, :failonfail => false).chomp
 
         found_match = false
         extracted_key.each_line do |line|
